@@ -9,10 +9,11 @@ import { ArrowLeft, ChevronDown, ChevronUp } from 'lucide-react'
 interface Row {
   id: string; name: string; spend: number; impressions: number; reach: number
   clicks: number; cpm: number; ctr: number; frequency: number
-  resultLabel: string; results: number; forms: number; msgs: number; cpr: number | null
+  resultLabel: string; results: number; cpr: number | null
+  isMsgs: boolean; isLead: boolean
+  msgsStarted: number; msgsConnected: number; leadsForm: number
 }
 interface AdRow extends Row { adsetName: string }
-
 type Tab = 'adsets' | 'ads'
 
 function cn(...c: (string | false | undefined)[]) { return c.filter(Boolean).join(' ') }
@@ -27,15 +28,15 @@ function Table({ rows, type }: { rows: Row[]; type: Tab }) {
   }
 
   const sorted = [...rows].sort((a, b) => {
-    const va = a[sortKey] as number | string | null ?? 0
-    const vb = b[sortKey] as number | string | null ?? 0
+    const va = a[sortKey] as number | null ?? 0
+    const vb = b[sortKey] as number | null ?? 0
     return sortDir === 'desc' ? (vb as number) - (va as number) : (va as number) - (vb as number)
   })
 
-  function Th({ label, k }: { label: string; k: keyof Row }) {
+  function Th({ label, k, className }: { label: string; k: keyof Row; className?: string }) {
     const active = sortKey === k
     return (
-      <th className="text-right px-3 py-3 cursor-pointer select-none hover:text-slate-700"
+      <th className={cn('text-right px-3 py-3 cursor-pointer select-none hover:text-slate-700 text-[11px] font-semibold text-slate-500 uppercase tracking-wide', className)}
         onClick={() => toggleSort(k)}>
         <span className="flex items-center justify-end gap-1">
           {label}
@@ -49,17 +50,20 @@ function Table({ rows, type }: { rows: Row[]; type: Tab }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-            <th className="text-left px-5 py-3">
+          <tr className="bg-slate-50">
+            <th className="text-left px-5 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
               {type === 'adsets' ? 'Ad Set' : 'Anuncio'}
             </th>
-            {type === 'ads' && <th className="text-left px-3 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Ad Set</th>}
+            {type === 'ads' && (
+              <th className="text-left px-3 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Ad Set</th>
+            )}
             <Th label="Gasto"   k="spend" />
             <Th label="Impr."   k="impressions" />
-            <Th label="Alcance" k="reach" />
             <Th label="Frec."   k="frequency" />
             <Th label="CTR"     k="ctr" />
             <Th label="CPM"     k="cpm" />
+            <Th label="Msgs"    k="msgsStarted"   className="text-violet-600" />
+            <Th label="Cli.Pot" k="leadsForm"      className="text-emerald-600" />
             <Th label="Result." k="results" />
             <Th label="Costo/R" k="cpr" />
           </tr>
@@ -67,30 +71,41 @@ function Table({ rows, type }: { rows: Row[]; type: Tab }) {
         <tbody className="divide-y divide-slate-50">
           {sorted.map((r) => (
             <tr key={r.id} className="hover:bg-slate-50/70 transition-colors">
-              <td className="px-5 py-3 font-medium text-slate-700 max-w-[240px]">
-                <span className="block truncate text-xs" title={r.name}>{r.name}</span>
+              <td className="px-5 py-3 max-w-[220px]">
+                <span className="block truncate text-xs font-medium text-slate-700" title={r.name}>{r.name}</span>
               </td>
               {type === 'ads' && (
                 <td className="px-3 py-3 text-xs text-slate-400 max-w-[160px]">
                   <span className="block truncate" title={(r as AdRow).adsetName}>{(r as AdRow).adsetName}</span>
                 </td>
               )}
-              <td className="px-3 py-3 text-right font-mono text-xs text-slate-700 font-semibold">{fmtARS(r.spend)}</td>
+              <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-700">{fmtARS(r.spend)}</td>
               <td className="px-3 py-3 text-right text-xs text-slate-500">{fmtNum(r.impressions)}</td>
-              <td className="px-3 py-3 text-right text-xs text-slate-500">{fmtNum(r.reach)}</td>
               <td className="px-3 py-3 text-right text-xs text-slate-500">{r.frequency.toFixed(2)}</td>
               <td className="px-3 py-3 text-right text-xs text-slate-500">{r.ctr.toFixed(2)}%</td>
               <td className="px-3 py-3 text-right font-mono text-xs text-slate-500">{fmtARS(r.cpm)}</td>
+              {/* Mensajes iniciados */}
+              <td className="px-3 py-3 text-right">
+                <span className={cn('text-xs font-semibold', r.msgsStarted > 0 ? 'text-violet-600' : 'text-slate-200')}>
+                  {r.msgsStarted > 0 ? fmtNum(r.msgsStarted) : '—'}
+                </span>
+              </td>
+              {/* Clientes potenciales */}
+              <td className="px-3 py-3 text-right">
+                <span className={cn('text-xs font-semibold', r.leadsForm > 0 ? 'text-emerald-600' : 'text-slate-200')}>
+                  {r.leadsForm > 0 ? fmtNum(r.leadsForm) : '—'}
+                </span>
+              </td>
+              {/* Resultado principal (de Meta) */}
               <td className="px-3 py-3 text-right">
                 {r.results > 0 ? (
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-emerald-600">{fmtNum(r.results)}</span>
-                    {r.msgs > 0 && r.forms > 0 && (
-                      <p className="text-[10px] text-slate-400">{r.forms}f · {r.msgs}m</p>
-                    )}
+                  <div>
+                    <span className="text-xs font-bold text-slate-700">{fmtNum(r.results)}</span>
+                    <p className="text-[9px] text-slate-400 leading-none mt-0.5">{r.resultLabel}</p>
                   </div>
-                ) : <span className="text-xs text-slate-300">—</span>}
+                ) : <span className="text-xs text-slate-200">—</span>}
               </td>
+              {/* CPR exacto de Meta */}
               <td className="px-3 py-3 text-right font-mono text-xs text-slate-600">
                 {r.cpr ? fmtARS(r.cpr) : '—'}
               </td>
@@ -103,17 +118,17 @@ function Table({ rows, type }: { rows: Row[]; type: Tab }) {
 }
 
 export default function CampaignPage() {
-  const { id }   = useParams<{ id: string }>()
-  const sp       = useSearchParams()
-  const objective = sp.get('objective') ?? 'OUTCOME_LEADS'
-  const name     = sp.get('name') ?? id
-  const since    = sp.get('since') ?? ''
-  const until    = sp.get('until') ?? ''
+  const { id }     = useParams<{ id: string }>()
+  const sp         = useSearchParams()
+  const objective  = sp.get('objective') ?? 'OUTCOME_LEADS'
+  const name       = sp.get('name') ?? id
+  const since      = sp.get('since') ?? ''
+  const until      = sp.get('until') ?? ''
 
-  const [tab, setTab]           = useState<Tab>('adsets')
-  const [adsets, setAdsets]     = useState<Row[]>([])
-  const [ads, setAds]           = useState<AdRow[]>([])
-  const [loading, setLoading]   = useState(false)
+  const [tab, setTab]             = useState<Tab>('adsets')
+  const [adsets, setAdsets]       = useState<Row[]>([])
+  const [ads, setAds]             = useState<AdRow[]>([])
+  const [loading, setLoading]     = useState(false)
   const [loadedAds, setLoadedAds] = useState(false)
 
   const dateParams = since && until ? `&since=${since}&until=${until}` : ''
@@ -121,8 +136,7 @@ export default function CampaignPage() {
   const loadAdsets = useCallback(async () => {
     setLoading(true)
     try {
-      const r = await fetch(`/api/meta-ads/adsets?campaign_id=${id}&objective=${objective}${dateParams}`)
-      const j = await r.json()
+      const j = await (await fetch(`/api/meta-ads/adsets?campaign_id=${id}&objective=${objective}${dateParams}`)).json()
       setAdsets(j.adsets ?? [])
     } finally { setLoading(false) }
   }, [id, objective, dateParams])
@@ -131,8 +145,7 @@ export default function CampaignPage() {
     if (loadedAds) return
     setLoading(true)
     try {
-      const r = await fetch(`/api/meta-ads/ads?campaign_id=${id}&objective=${objective}${dateParams}`)
-      const j = await r.json()
+      const j = await (await fetch(`/api/meta-ads/ads?campaign_id=${id}&objective=${objective}${dateParams}`)).json()
       setAds(j.ads ?? [])
       setLoadedAds(true)
     } finally { setLoading(false) }
@@ -140,14 +153,13 @@ export default function CampaignPage() {
 
   useEffect(() => { loadAdsets() }, [loadAdsets])
 
-  function switchTab(t: Tab) {
-    setTab(t)
-    if (t === 'ads') loadAds()
-  }
+  function switchTab(t: Tab) { setTab(t); if (t === 'ads') loadAds() }
 
-  const activeRows = tab === 'adsets' ? adsets : ads
-  const totalSpend = activeRows.reduce((s, r) => s + r.spend, 0)
-  const totalResults = activeRows.reduce((s, r) => s + r.results, 0)
+  const activeRows     = tab === 'adsets' ? adsets : ads
+  const totalSpend     = activeRows.reduce((s, r) => s + r.spend, 0)
+  const totalResults   = activeRows.reduce((s, r) => s + r.results, 0)
+  const totalMsgs      = activeRows.reduce((s, r) => s + r.msgsStarted, 0)
+  const totalLeads     = activeRows.reduce((s, r) => s + r.leadsForm, 0)
 
   const objColor: Record<string, string> = {
     OUTCOME_LEADS: '#3b82f6', OUTCOME_ENGAGEMENT: '#8b5cf6',
@@ -158,12 +170,12 @@ export default function CampaignPage() {
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-100 px-8 py-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 max-w-7xl mx-auto">
-          <Link href={`/dashboard`} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors">
+          <Link href="/dashboard" className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600">
             <ArrowLeft className="w-3.5 h-3.5" /> Volver
           </Link>
-          <span className="text-slate-300">/</span>
+          <span className="text-slate-200">/</span>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
               style={{ backgroundColor: (objColor[objective] ?? '#94a3b8') + '20', color: objColor[objective] ?? '#64748b' }}>
               {OBJECTIVE_LABELS[objective] ?? objective}
             </span>
@@ -174,29 +186,23 @@ export default function CampaignPage() {
 
       <main className="max-w-7xl mx-auto px-8 py-8">
         {/* Summary strip */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <div className="bg-white rounded-xl border border-slate-100 border-l-4 border-l-rose-500 p-4">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Gasto</p>
-            <p className="text-xl font-bold text-slate-800">{fmtARS(totalSpend)}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-100 border-l-4 border-l-emerald-500 p-4">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-              {activeRows[0]?.resultLabel ?? 'Resultados'}
-            </p>
-            <p className="text-xl font-bold text-slate-800">{fmtNum(totalResults)}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-100 border-l-4 border-l-violet-500 p-4">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Costo / resultado</p>
-            <p className="text-xl font-bold text-slate-800">
-              {totalResults > 0 ? fmtARS(totalSpend / totalResults) : '—'}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-100 border-l-4 border-l-blue-500 p-4">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">
-              {tab === 'adsets' ? 'Ad Sets' : 'Anuncios'}
-            </p>
-            <p className="text-xl font-bold text-slate-800">{activeRows.length}</p>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+          {[
+            { label: 'Gasto', value: fmtARS(totalSpend), accent: 'border-l-rose-500' },
+            { label: 'Mensajes iniciados', value: fmtNum(totalMsgs), accent: 'border-l-violet-500' },
+            { label: 'Clientes potenciales', value: fmtNum(totalLeads), accent: 'border-l-emerald-500' },
+            { label: activeRows[0]?.resultLabel ?? 'Resultado Meta', value: fmtNum(totalResults), accent: 'border-l-blue-500' },
+            {
+              label: 'Costo / resultado',
+              value: totalResults > 0 ? fmtARS(totalSpend / totalResults) : '—',
+              accent: 'border-l-amber-400',
+            },
+          ].map(({ label, value, accent }) => (
+            <div key={label} className={cn('bg-white rounded-xl border border-slate-100 border-l-4 p-4', accent)}>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{label}</p>
+              <p className="text-xl font-bold text-slate-800">{value}</p>
+            </div>
+          ))}
         </div>
 
         {/* Tabs */}
@@ -209,7 +215,8 @@ export default function CampaignPage() {
                     ? 'border-blue-500 text-blue-600 bg-blue-50/50'
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 )}>
-                {t === 'adsets' ? 'Ad Sets' : 'Anuncios'} ({t === 'adsets' ? adsets.length : (loadedAds ? ads.length : '…')})
+                {t === 'adsets' ? 'Ad Sets' : 'Anuncios'}&nbsp;
+                ({t === 'adsets' ? adsets.length : (loadedAds ? ads.length : '…')})
               </button>
             ))}
           </div>

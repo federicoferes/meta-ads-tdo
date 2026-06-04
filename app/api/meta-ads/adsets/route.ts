@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { META_BASE, MetaAction, getResult, qs } from '@/lib/meta'
+import { META_BASE, MetaAction, MetaCPR, deriveResult, sumActions, MSGS_STARTED, MSGS_CONNECTED, LEADS_FORM, qs } from '@/lib/meta'
 
-const TOKEN  = process.env.META_ACCESS_TOKEN!
+const TOKEN   = process.env.META_ACCESS_TOKEN!
 const ACCOUNT = process.env.META_AD_ACCOUNT_ID!
 
 export async function GET(req: NextRequest) {
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
 
   const tr     = JSON.stringify({ since, until })
   const filter = JSON.stringify([{ field: 'campaign.id', operator: 'IN', value: [campaignId] }])
-  const fields = 'adset_name,adset_id,spend,impressions,reach,clicks,cpm,ctr,frequency,actions'
+  const fields = 'adset_name,adset_id,spend,impressions,reach,clicks,cpm,ctr,frequency,actions,cost_per_result'
 
   const res = await fetch(
     `${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields, time_range: tr, level: 'adset', filtering: filter, limit: '50', sort: 'spend_descending' })}`
@@ -24,29 +24,33 @@ export async function GET(req: NextRequest) {
 
   const json   = await res.json()
   const adsets = (json.data ?? []).map((a: Record<string, unknown>) => {
-    const acts   = a.actions as MetaAction[] | undefined
-    const result = getResult(objective, acts)
-    const spend  = Number(a.spend ?? 0)
+    const actions  = a.actions  as MetaAction[] | undefined
+    const cprField = a.cost_per_result as MetaCPR[] | undefined
+    const spend    = Number(a.spend ?? 0)
+    const result   = deriveResult(spend, objective, actions, cprField)
     return {
-      id:          a.adset_id,
-      name:        a.adset_name,
+      id:            a.adset_id,
+      name:          a.adset_name,
       spend,
-      impressions: Number(a.impressions ?? 0),
-      reach:       Number(a.reach ?? 0),
-      clicks:      Number(a.clicks ?? 0),
-      cpm:         Number(a.cpm ?? 0),
-      ctr:         Number(a.ctr ?? 0),
-      frequency:   Number(a.frequency ?? 0),
-      resultLabel: result.label,
-      results:     result.value,
-      forms:       result.forms,
-      msgs:        result.msgs,
-      cpr:         result.value > 0 ? spend / result.value : null,
+      impressions:   Number(a.impressions ?? 0),
+      reach:         Number(a.reach ?? 0),
+      clicks:        Number(a.clicks ?? 0),
+      cpm:           Number(a.cpm ?? 0),
+      ctr:           Number(a.ctr ?? 0),
+      frequency:     Number(a.frequency ?? 0),
+      resultLabel:   result.label,
+      results:       result.value,
+      cpr:           result.cpr,
+      isMsgs:        result.isMsgs,
+      isLead:        result.isLead,
+      msgsStarted:   sumActions(actions, MSGS_STARTED),
+      msgsConnected: sumActions(actions, MSGS_CONNECTED),
+      leadsForm:     sumActions(actions, LEADS_FORM),
     }
   })
 
   return NextResponse.json({ adsets })
 }
 
-function today()        { return new Date().toISOString().slice(0, 10) }
-function thirtyDaysAgo(){ const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10) }
+function today()         { return new Date().toISOString().slice(0, 10) }
+function thirtyDaysAgo() { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10) }

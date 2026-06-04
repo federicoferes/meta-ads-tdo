@@ -8,19 +8,25 @@ import {
   ResponsiveContainer, Legend, Cell,
 } from 'recharts'
 import { daysAgo, fmtARS, fmtNum, thisMonthStart, today, OBJECTIVE_LABELS } from '@/lib/meta'
-import { RefreshCw, ChevronRight } from 'lucide-react'
+import { RefreshCw, ChevronRight, MessageCircle, FileText, MousePointerClick, Eye, DollarSign, Activity } from 'lucide-react'
 
 interface Overview {
-  spend: number; impressions: number; reach: number; clicks: number
-  msgs: number; forms: number; cpm: number; ctr: number; frequency: number
+  spend: number; impressions: number; reach: number
+  clicks: number; pageViews: number
+  msgsStarted: number; msgsConnected: number
+  leadsForm: number; totalLeads: number
+  cpm: number; ctr: number; frequency: number
+  cpmMsg: number | null; cpmLead: number | null
 }
 interface Campaign {
   id: string; name: string; objective: string
   impressions: number; reach: number; clicks: number; spend: number
   cpm: number; ctr: number; frequency: number
-  resultLabel: string; results: number; forms: number; msgs: number; cpr: number | null
+  resultLabel: string; results: number; cpr: number | null
+  isMsgs: boolean; isLead: boolean
+  msgsStarted: number; msgsConnected: number; leadsForm: number
 }
-interface TrendPoint { date: string; spend: number; impressions: number; msgs: number; clicks: number }
+interface TrendPoint { date: string; spend: number; impressions: number; msgsStarted: number; leadsForm: number }
 interface Platform   { platform: string; spend: number; impressions: number; clicks: number }
 interface MetaData {
   since: string; until: string; overview: Overview
@@ -29,37 +35,36 @@ interface MetaData {
 }
 
 const PRESETS = [
-  { label: 'Últimos 7d',  since: () => daysAgo(7),   until: today },
-  { label: 'Últimos 30d', since: () => daysAgo(30),  until: today },
-  { label: 'Este mes',    since: thisMonthStart,      until: today },
+  { label: 'Últimos 7d',  since: () => daysAgo(7),  until: today },
+  { label: 'Últimos 30d', since: () => daysAgo(30), until: today },
+  { label: 'Este mes',    since: thisMonthStart,     until: today },
 ]
 
 const PLATFORM_COLORS: Record<string, string> = {
-  facebook:  '#1877F2',
-  instagram: '#E1306C',
-  whatsapp:  '#25D366',
-  threads:   '#000000',
+  facebook: '#1877F2', instagram: '#E1306C', whatsapp: '#25D366', threads: '#000',
 }
-
 const OBJ_COLORS: Record<string, string> = {
-  OUTCOME_LEADS:      '#3b82f6',
-  OUTCOME_ENGAGEMENT: '#8b5cf6',
-  LINK_CLICKS:        '#f59e0b',
-  OUTCOME_TRAFFIC:    '#f59e0b',
-  OUTCOME_SALES:      '#10b981',
+  OUTCOME_LEADS: '#3b82f6', OUTCOME_ENGAGEMENT: '#8b5cf6',
+  LINK_CLICKS: '#f59e0b', OUTCOME_TRAFFIC: '#f59e0b', OUTCOME_SALES: '#10b981',
 }
 
 function cn(...c: (string | false | undefined)[]) { return c.filter(Boolean).join(' ') }
 
-function KPI({ label, value, sub, accent = 'blue' }: { label: string; value: string; sub?: string; accent?: string }) {
+function KPI({ label, value, sub, accent = 'blue', icon }: {
+  label: string; value: string; sub?: string; accent?: string; icon?: React.ReactNode
+}) {
   const border: Record<string, string> = {
     blue: 'border-l-blue-500', emerald: 'border-l-emerald-500',
     violet: 'border-l-violet-500', amber: 'border-l-amber-500',
-    rose: 'border-l-rose-500', sky: 'border-l-sky-400', slate: 'border-l-slate-400',
+    rose: 'border-l-rose-500', sky: 'border-l-sky-400', slate: 'border-l-slate-300',
+    green: 'border-l-green-500',
   }
   return (
     <div className={cn('bg-white rounded-xl border border-slate-100 border-l-4 p-4', border[accent] ?? border.blue)}>
-      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">{label}</p>
+      <div className="flex items-center gap-1.5 mb-1">
+        {icon && <span className="text-slate-400">{icon}</span>}
+        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
+      </div>
       <p className="text-xl font-bold text-slate-800 leading-none">{value}</p>
       {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
     </div>
@@ -75,18 +80,15 @@ export default function DashboardPage() {
 
   const load = useCallback(async (s: string, u: string) => {
     setLoading(true)
-    try {
-      const r = await fetch(`/api/meta-ads?since=${s}&until=${u}`)
-      setData(await r.json())
-    } finally { setLoading(false) }
+    try { setData(await (await fetch(`/api/meta-ads?since=${s}&until=${u}`)).json()) }
+    finally { setLoading(false) }
   }, [])
 
   useEffect(() => { load(since, until) }, [load, since, until])
 
   function applyPreset(i: number) {
     setPreset(i)
-    const p = PRESETS[i]
-    const s = p.since(); const u = p.until()
+    const s = PRESETS[i].since(); const u = PRESETS[i].until()
     setSince(s); setUntil(u)
   }
 
@@ -96,10 +98,7 @@ export default function DashboardPage() {
     label: new Date(t.date + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }),
   })) ?? []
 
-  const platformData = (data?.platforms ?? [])
-    .filter(p => p.spend > 0)
-    .sort((a, b) => b.spend - a.spend)
-
+  const platformData  = (data?.platforms ?? []).filter(p => p.spend > 0).sort((a, b) => b.spend - a.spend)
   const objectiveData = Object.entries(data?.byObjective ?? {})
     .map(([obj, spend]) => ({ name: OBJECTIVE_LABELS[obj] ?? obj, spend, obj }))
     .sort((a, b) => b.spend - a.spend)
@@ -111,10 +110,17 @@ export default function DashboardPage() {
           <h1 className="text-base font-bold text-slate-800">Tierra de Oportunidades — Meta Ads</h1>
           <p className="text-xs text-slate-400 mt-0.5">{since} → {until}</p>
         </div>
-        <button onClick={() => load(since, until)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors">
-          <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
-          Actualizar
-        </button>
+        <div className="flex items-center gap-3">
+          <Link href="/agent"
+            className="text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors">
+            Estratega IA
+          </Link>
+          <button onClick={() => load(since, until)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors">
+            <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
+            Actualizar
+          </button>
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-8 py-8">
@@ -138,24 +144,61 @@ export default function DashboardPage() {
 
         {o && (
           <>
-            {/* KPIs */}
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 mb-8">
-              <KPI label="Gasto total" value={fmtARS(o.spend)} sub="todas las campañas" accent="rose" />
-              <KPI label="Mensajes" value={fmtNum(o.msgs)} sub="conv. iniciadas" accent="violet" />
-              <KPI label="Leads form" value={fmtNum(o.forms)} sub="formularios" accent="emerald" />
-              <KPI label="Clics" value={fmtNum(o.clicks)} sub={`CTR ${o.ctr.toFixed(2)}%`} accent="blue" />
-              <KPI label="Impresiones" value={fmtNum(o.impressions)} sub={`Alcance ${fmtNum(o.reach)}`} accent="sky" />
-              <KPI label="CPM" value={fmtARS(o.cpm)} sub="por mil impr." accent="amber" />
-              <KPI label="Frecuencia" value={o.frequency.toFixed(2)} sub="veces por persona" accent="slate" />
+            {/* ── KPIs: Gasto + Resultados clave ── */}
+            <div className="mb-2">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Inversión</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <KPI label="Gasto total" value={fmtARS(o.spend)} sub="todas las campañas" accent="rose"
+                  icon={<DollarSign className="w-3 h-3" />} />
+                <KPI label="CPM" value={fmtARS(o.cpm)} sub="por mil impresiones" accent="amber"
+                  icon={<Activity className="w-3 h-3" />} />
+                <KPI label="Impresiones" value={fmtNum(o.impressions)} sub={`Alcance ${fmtNum(o.reach)}`} accent="sky"
+                  icon={<Eye className="w-3 h-3" />} />
+                <KPI label="Frecuencia" value={o.frequency.toFixed(2)} sub={`CTR ${o.ctr.toFixed(2)}%`} accent="slate"
+                  icon={<Activity className="w-3 h-3" />} />
+              </div>
             </div>
 
-            {/* Trend + Platform split */}
+            <div className="mb-8">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Resultados por tipo</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <KPI
+                  label="Mensajes iniciados"
+                  value={fmtNum(o.msgsStarted)}
+                  sub={o.cpmMsg ? `Costo: ${fmtARS(o.cpmMsg)}` : 'resultado principal de messaging'}
+                  accent="violet"
+                  icon={<MessageCircle className="w-3 h-3" />}
+                />
+                <KPI
+                  label="Clientes potenciales"
+                  value={fmtNum(o.leadsForm)}
+                  sub={o.cpmLead ? `Costo: ${fmtARS(o.cpmLead)}` : 'leads por formulario'}
+                  accent="emerald"
+                  icon={<FileText className="w-3 h-3" />}
+                />
+                <KPI
+                  label="Mensajes conectados"
+                  value={fmtNum(o.msgsConnected)}
+                  sub="total_messaging_connection"
+                  accent="blue"
+                  icon={<MessageCircle className="w-3 h-3" />}
+                />
+                <KPI
+                  label="Clics al destino"
+                  value={fmtNum(o.clicks)}
+                  sub={`+ ${fmtNum(o.pageViews)} vistas de página`}
+                  accent="sky"
+                  icon={<MousePointerClick className="w-3 h-3" />}
+                />
+              </div>
+            </div>
+
+            {/* ── Trend + Platform ── */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
-              {/* Trend */}
               {trendData.length > 1 && (
                 <div className="xl:col-span-2 bg-white rounded-xl border border-slate-100 p-6">
-                  <h2 className="text-sm font-semibold text-slate-700 mb-4">Gasto diario</h2>
-                  <ResponsiveContainer width="100%" height={200}>
+                  <h2 className="text-sm font-semibold text-slate-700 mb-4">Gasto y resultados diarios</h2>
+                  <ResponsiveContainer width="100%" height={210}>
                     <AreaChart data={trendData}>
                       <defs>
                         <linearGradient id="gS" x1="0" y1="0" x2="0" y2="1">
@@ -165,21 +208,24 @@ export default function DashboardPage() {
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                       <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                      <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                      <Tooltip formatter={(v) => fmtARS(Number(v))} />
-                      <Area type="monotone" dataKey="spend" name="Gasto" stroke="#3b82f6" fill="url(#gS)" strokeWidth={2} dot={false} />
+                      <YAxis yAxisId="l" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
+                      <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                      <Tooltip formatter={(v, name) => name === 'Gasto' ? [fmtARS(Number(v)), name] : [v, name]} />
+                      <Legend />
+                      <Area yAxisId="l" type="monotone" dataKey="spend"       name="Gasto"             stroke="#3b82f6" fill="url(#gS)" strokeWidth={2} dot={false} />
+                      <Area yAxisId="r" type="monotone" dataKey="msgsStarted" name="Mensajes iniciados" stroke="#8b5cf6" fill="none"     strokeWidth={2} dot={false} />
+                      <Area yAxisId="r" type="monotone" dataKey="leadsForm"   name="Clientes potenciales" stroke="#10b981" fill="none"   strokeWidth={2} strokeDasharray="4 2" dot={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               )}
 
-              {/* Platform + Objective */}
               <div className="flex flex-col gap-4">
                 <div className="bg-white rounded-xl border border-slate-100 p-5">
                   <h2 className="text-sm font-semibold text-slate-700 mb-4">Por plataforma</h2>
                   <div className="space-y-3">
                     {platformData.map((p) => {
-                      const pct = (p.spend / o.spend) * 100
+                      const pct   = (p.spend / o.spend) * 100
                       const color = PLATFORM_COLORS[p.platform] ?? '#94a3b8'
                       return (
                         <div key={p.platform}>
@@ -188,9 +234,9 @@ export default function DashboardPage() {
                             <span className="text-xs font-semibold text-slate-700">{fmtARS(p.spend)}</span>
                           </div>
                           <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{pct.toFixed(1)}% del gasto</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{pct.toFixed(1)}%</p>
                         </div>
                       )
                     })}
@@ -201,7 +247,7 @@ export default function DashboardPage() {
                   <h2 className="text-sm font-semibold text-slate-700 mb-4">Por objetivo</h2>
                   <div className="space-y-2">
                     {objectiveData.map((od) => {
-                      const pct = (od.spend / o.spend) * 100
+                      const pct   = (od.spend / o.spend) * 100
                       const color = OBJ_COLORS[od.obj] ?? '#94a3b8'
                       return (
                         <div key={od.obj}>
@@ -220,13 +266,13 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Spend by campaign bar */}
+            {/* ── Bar chart top campañas ── */}
             <div className="bg-white rounded-xl border border-slate-100 p-6 mb-8">
               <h2 className="text-sm font-semibold text-slate-700 mb-4">Top campañas por gasto</h2>
               <ResponsiveContainer width="100%" height={Math.max(180, Math.min(data.campaigns.length, 10) * 34)}>
                 <BarChart data={data.campaigns.slice(0, 10)} layout="vertical" margin={{ left: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={220}
                     tickFormatter={(v: string) => v.length > 32 ? v.slice(0, 32) + '…' : v} />
                   <Tooltip formatter={(v) => fmtARS(Number(v))} />
@@ -247,7 +293,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Campaign table */}
+            {/* ── Campaign table ── */}
             <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-slate-700">Todas las campañas</h2>
@@ -263,17 +309,18 @@ export default function DashboardPage() {
                       <th className="text-right px-3 py-3">Impr.</th>
                       <th className="text-right px-3 py-3">Frec.</th>
                       <th className="text-right px-3 py-3">CTR</th>
-                      <th className="text-right px-3 py-3">CPM</th>
-                      <th className="text-right px-3 py-3">Result.</th>
+                      <th className="text-right px-3 py-3 text-violet-600">Msgs</th>
+                      <th className="text-right px-3 py-3 text-emerald-600">Cli. Pot.</th>
+                      <th className="text-right px-3 py-3">Resultado</th>
                       <th className="text-right px-3 py-3">Costo/R</th>
-                      <th className="px-3 py-3"></th>
+                      <th className="px-3 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {data.campaigns.map((c) => (
                       <tr key={c.id} className="hover:bg-slate-50/70 transition-colors group">
-                        <td className="px-5 py-3 font-medium text-slate-700 max-w-[200px]">
-                          <span className="block truncate text-xs" title={c.name}>{c.name}</span>
+                        <td className="px-5 py-3 max-w-[200px]">
+                          <span className="block truncate text-xs font-medium text-slate-700" title={c.name}>{c.name}</span>
                         </td>
                         <td className="px-3 py-3">
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
@@ -281,23 +328,37 @@ export default function DashboardPage() {
                             {OBJECTIVE_LABELS[c.objective] ?? c.objective}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-right font-mono text-xs text-slate-700 font-semibold">{fmtARS(c.spend)}</td>
+                        <td className="px-3 py-3 text-right font-mono text-xs font-semibold text-slate-700">{fmtARS(c.spend)}</td>
                         <td className="px-3 py-3 text-right text-xs text-slate-500">{fmtNum(c.impressions)}</td>
                         <td className="px-3 py-3 text-right text-xs text-slate-500">{c.frequency.toFixed(2)}</td>
                         <td className="px-3 py-3 text-right text-xs text-slate-500">{c.ctr.toFixed(2)}%</td>
-                        <td className="px-3 py-3 text-right text-xs font-mono text-slate-500">{fmtARS(c.cpm)}</td>
+                        {/* Mensajes iniciados */}
+                        <td className="px-3 py-3 text-right">
+                          <span className={cn('text-xs font-semibold', c.msgsStarted > 0 ? 'text-violet-600' : 'text-slate-200')}>
+                            {c.msgsStarted > 0 ? fmtNum(c.msgsStarted) : '—'}
+                          </span>
+                        </td>
+                        {/* Clientes potenciales */}
+                        <td className="px-3 py-3 text-right">
+                          <span className={cn('text-xs font-semibold', c.leadsForm > 0 ? 'text-emerald-600' : 'text-slate-200')}>
+                            {c.leadsForm > 0 ? fmtNum(c.leadsForm) : '—'}
+                          </span>
+                        </td>
+                        {/* Resultado principal de Meta */}
                         <td className="px-3 py-3 text-right">
                           {c.results > 0 ? (
-                            <span className="text-xs font-bold text-emerald-600">{fmtNum(c.results)}</span>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
+                            <div>
+                              <span className="text-xs font-bold text-slate-700">{fmtNum(c.results)}</span>
+                              <p className="text-[9px] text-slate-400 leading-none mt-0.5">{c.resultLabel}</p>
+                            </div>
+                          ) : <span className="text-xs text-slate-200">—</span>}
                         </td>
+                        {/* Costo por resultado (de Meta — igual al Ads Manager) */}
                         <td className="px-3 py-3 text-right font-mono text-xs text-slate-600">
                           {c.cpr ? fmtARS(c.cpr) : '—'}
                         </td>
                         <td className="px-3 py-3">
-                          <Link href={`/dashboard/campaign/${c.id}?objective=${c.objective}&name=${encodeURIComponent(c.name)}&since=${since}&until=${until}`}
+                          <Link href={`/dashboard/campaign/${c.id}?objective=${c.objective}&name=${encodeURIComponent(c.name as string)}&since=${since}&until=${until}`}
                             className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 whitespace-nowrap">
                             Ver <ChevronRight className="w-3 h-3" />
                           </Link>
