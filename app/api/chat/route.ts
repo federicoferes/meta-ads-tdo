@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { createOpenAI } from '@ai-sdk/openai'
 import { streamText, convertToModelMessages } from 'ai'
 import { TDO_SYSTEM_PROMPT } from '@/lib/tdo-context'
