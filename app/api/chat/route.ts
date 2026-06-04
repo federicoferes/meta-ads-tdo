@@ -37,16 +37,15 @@ export async function POST(req: Request) {
     model: openrouter(modelId),
     system,
     messages,
-    stopWhen: stepCountIs(2),
+    stopWhen: stepCountIs(3),
     tools: {
       get_campaign_data: tool({
-        description: `Obtiene métricas reales de Meta Ads de Tierra de Oportunidades. Llamá esta herramienta UNA SOLA VEZ por consulta. Hoy es ${nowDate}. Para "últimos 30 días" usá since="${daysAgo(30)}" until="${nowDate}".`,
+        description: `Obtiene overview + detalle de campañas de Meta Ads de TdO en UN SOLO llamado. No llamar más de una vez por consulta. Hoy es ${nowDate}. Para "últimos 30 días" usá since="${daysAgo(30)}" until="${nowDate}".`,
         inputSchema: z.object({
           since: z.string().optional(),
           until: z.string().optional(),
-          level: z.enum(['account', 'campaign']).optional(),
         }),
-        execute: async ({ since, until, level = 'campaign' }: { since?: string; until?: string; level?: 'account' | 'campaign' }) => {
+        execute: async ({ since, until }: { since?: string; until?: string }) => {
           const s = since ?? daysAgo(30)
           const u = until ?? today()
           const tr = JSON.stringify({ since: s, until: u })
@@ -96,7 +95,7 @@ export async function POST(req: Request) {
               }
             })
 
-            return { ok: true, overview, campaigns: level === 'campaign' ? campaigns : undefined }
+            return { ok: true, overview, campaigns }
           } catch (e) {
             return { ok: false, error: String(e) }
           }
