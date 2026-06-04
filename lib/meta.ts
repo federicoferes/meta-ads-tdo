@@ -43,7 +43,7 @@ export function deriveResult(
   // ── 1. Use Meta's cost_per_result indicator when available ──
   if (cprField && cprField.length > 0) {
     const { indicator, values } = cprField[0]
-    const cpr   = values[0] ? Number(values[0].value) : null
+    const cpr   = values && values[0] ? Number(values[0].value) : null
     const atype = indicator.startsWith('actions:') ? indicator.slice('actions:'.length) : null
 
     const isMsgs = !!atype && (
