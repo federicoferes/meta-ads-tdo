@@ -2,7 +2,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { streamText, tool, stepCountIs, convertToModelMessages } from 'ai'
 import { z } from 'zod'
 import { TDO_SYSTEM_PROMPT } from '@/lib/tdo-context'
-import { META_BASE, MetaAction, MetaCPR, deriveResult, sumActions, MSGS_STARTED, MSGS_CONNECTED, LEADS_FORM, qs } from '@/lib/meta'
+import { META_BASE, MetaAction, MetaCPR, deriveResult, sumActions, MSGS_STARTED, MSGS_CONNECTED, LEADS_FORM, qs, daysAgo } from '@/lib/meta'
 
 const openrouter = createOpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
@@ -28,17 +28,19 @@ export const maxDuration = 60
 
 export async function POST(req: Request) {
   const { messages: uiMessages, model: requestedModel } = await req.json()
-  const modelId = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL
-  const messages = await convertToModelMessages(uiMessages)
+  const modelId  = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL
+  const messages = await convertToModelMessages(uiMessages ?? [])
+  const nowDate  = today()
+  const system   = `${TDO_SYSTEM_PROMPT}\n\nFecha de hoy: ${nowDate}. Usá esta fecha como referencia para calcular rangos (ej: "últimos 30 días" = desde ${daysAgo(30)} hasta ${nowDate}).`
 
   const result = streamText({
     model: openrouter(modelId),
-    system: TDO_SYSTEM_PROMPT,
+    system,
     messages,
-    stopWhen: stepCountIs(5),
+    stopWhen: stepCountIs(2),
     tools: {
       get_campaign_data: tool({
-        description: 'Obtiene métricas reales de Meta Ads para Tierra de Oportunidades. Usa esta herramienta cuando el usuario pregunta por datos actuales, rendimiento, gasto o resultados de campañas.',
+        description: `Obtiene métricas reales de Meta Ads de Tierra de Oportunidades. Llamá esta herramienta UNA SOLA VEZ por consulta. Hoy es ${nowDate}. Para "últimos 30 días" usá since="${daysAgo(30)}" until="${nowDate}".`,
         inputSchema: z.object({
           since: z.string().optional(),
           until: z.string().optional(),
@@ -106,5 +108,4 @@ export async function POST(req: Request) {
   return result.toUIMessageStreamResponse()
 }
 
-function today()    { return new Date().toISOString().slice(0, 10) }
-function daysAgo(n: number) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10) }
+function today() { return new Date().toISOString().slice(0, 10) }
