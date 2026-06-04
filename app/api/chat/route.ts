@@ -1,5 +1,10 @@
-import { anthropic } from '@ai-sdk/anthropic'
+import { createOpenAI } from '@ai-sdk/openai'
 import { streamText, tool, stepCountIs } from 'ai'
+
+const openrouter = createOpenAI({
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY!,
+})
 import { z } from 'zod'
 import { TDO_SYSTEM_PROMPT } from '@/lib/tdo-context'
 import { META_BASE, MetaAction, MetaCPR, deriveResult, sumActions, MSGS_STARTED, MSGS_CONNECTED, LEADS_FORM, qs } from '@/lib/meta'
@@ -13,7 +18,7 @@ export async function POST(req: Request) {
   const { messages } = await req.json()
 
   const result = streamText({
-    model: anthropic('claude-sonnet-4.6'),
+    model: openrouter('anthropic/claude-sonnet-4-5'),
     system: TDO_SYSTEM_PROMPT,
     messages,
     stopWhen: stepCountIs(5),
