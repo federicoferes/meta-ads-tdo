@@ -75,8 +75,11 @@ export default function DashboardPage() {
   const [data, setData]       = useState<MetaData | null>(null)
   const [loading, setLoading] = useState(true)
   const [preset, setPreset]   = useState(1)
-  const [since, setSince]     = useState(() => daysAgo(30))
-  const [until, setUntil]     = useState(today)
+  const [since, setSince]         = useState(() => daysAgo(30))
+  const [until, setUntil]         = useState(today)
+  const [customSince, setCustomSince] = useState('')
+  const [customUntil, setCustomUntil] = useState('')
+  const [showCustom, setShowCustom]   = useState(false)
 
   const load = useCallback(async (s: string, u: string) => {
     setLoading(true)
@@ -88,8 +91,18 @@ export default function DashboardPage() {
 
   function applyPreset(i: number) {
     setPreset(i)
+    setShowCustom(false)
     const s = PRESETS[i].since(); const u = PRESETS[i].until()
     setSince(s); setUntil(u)
+  }
+
+  function applyCustom() {
+    if (!customSince || !customUntil) return
+    if (customSince > customUntil) return
+    setPreset(-1)
+    setSince(customSince)
+    setUntil(customUntil)
+    setShowCustom(false)
   }
 
   const o = data?.overview
@@ -124,8 +137,8 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-8 py-8">
-        {/* Presets */}
-        <div className="flex items-center gap-2 mb-8">
+        {/* Presets + filtro personalizado */}
+        <div className="flex items-center gap-2 mb-8 flex-wrap">
           {PRESETS.map((p, i) => (
             <button key={i} onClick={() => applyPreset(i)}
               className={cn('px-4 py-1.5 rounded-full text-xs font-medium transition-colors',
@@ -134,6 +147,66 @@ export default function DashboardPage() {
               {p.label}
             </button>
           ))}
+
+          {/* Botón / panel de rango personalizado */}
+          <div className="relative">
+            <button
+              onClick={() => setShowCustom(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                preset === -1
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+              )}
+            >
+              {preset === -1 ? `${since} → ${until}` : 'Personalizado'}
+              <span className="opacity-60 text-[10px]">▾</span>
+            </button>
+
+            {showCustom && (
+              <div className="absolute left-0 top-full mt-2 bg-white border border-slate-200 rounded-xl shadow-lg p-4 z-20 min-w-[260px]">
+                <p className="text-xs font-semibold text-slate-600 mb-3">Rango personalizado</p>
+                <div className="flex flex-col gap-2 mb-3">
+                  <div>
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wide">Desde</label>
+                    <input
+                      type="date"
+                      value={customSince}
+                      onChange={e => setCustomSince(e.target.value)}
+                      max={customUntil || today()}
+                      className="w-full mt-0.5 px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 uppercase tracking-wide">Hasta</label>
+                    <input
+                      type="date"
+                      value={customUntil}
+                      onChange={e => setCustomUntil(e.target.value)}
+                      min={customSince}
+                      max={today()}
+                      className="w-full mt-0.5 px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={applyCustom}
+                    disabled={!customSince || !customUntil || customSince > customUntil}
+                    className="flex-1 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-300 text-white rounded-lg transition-colors"
+                  >
+                    Aplicar
+                  </button>
+                  <button
+                    onClick={() => setShowCustom(false)}
+                    className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50 rounded-lg transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {loading && !data && (
