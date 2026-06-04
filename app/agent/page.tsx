@@ -6,6 +6,15 @@ import { useRef, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Send, BarChart2, Lightbulb, TrendingUp, Users, DollarSign, Zap } from 'lucide-react'
 
+const MODELS = [
+  { id: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6', tag: 'Recomendado', color: 'bg-orange-50 text-orange-700 border-orange-200' },
+  { id: 'anthropic/claude-opus-4.8',   label: 'Claude Opus 4.8',   tag: 'Más potente',  color: 'bg-purple-50 text-purple-700 border-purple-200' },
+  { id: 'openai/gpt-4.1',              label: 'GPT-4.1',           tag: 'OpenAI',       color: 'bg-green-50 text-green-700 border-green-200' },
+  { id: 'google/gemini-2.5-pro',       label: 'Gemini 2.5 Pro',    tag: 'Google',       color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { id: 'google/gemini-2.5-flash',     label: 'Gemini 2.5 Flash',  tag: 'Rápido',       color: 'bg-sky-50 text-sky-700 border-sky-200' },
+  { id: 'deepseek/deepseek-v4-pro',    label: 'DeepSeek V4 Pro',   tag: 'Económico',    color: 'bg-slate-50 text-slate-700 border-slate-200' },
+]
+
 const STARTERS = [
   { icon: TrendingUp,  label: 'Diagnóstico de performance', prompt: 'Traé los datos de los últimos 30 días y decime cuáles campañas están bien y cuáles hay que revisar.' },
   { icon: Lightbulb,   label: 'Ideas creativas',             prompt: 'Necesito ideas de anuncios nuevos para Estilo Casares. Dame 5 hooks y conceptos creativos para video.' },
@@ -80,15 +89,19 @@ function MessageBubble({ role, content }: { role: string; content: string }) {
 }
 
 export default function AgentPage() {
+  const [model, setModel] = useState(MODELS[0].id)
   const { messages, status, sendMessage } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+    transport: new DefaultChatTransport({ api: '/api/chat', body: { model } }),
   })
-  const [input, setInput] = useState('')
+  const [input, setInput]   = useState('')
+  const [showModels, setShowModels] = useState(false)
 
-  const busy = status === 'streaming' || status === 'submitted'
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const inputRef  = useRef<HTMLTextAreaElement>(null)
+  const busy       = status === 'streaming' || status === 'submitted'
+  const bottomRef  = useRef<HTMLDivElement>(null)
+  const inputRef   = useRef<HTMLTextAreaElement>(null)
   const [rows, setRows] = useState(1)
+
+  const activeModel = MODELS.find(m => m.id === model) ?? MODELS[0]
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -134,9 +147,38 @@ export default function AgentPage() {
             <p className="text-[10px] text-slate-400">Tierra de Oportunidades · Meta Ads</p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <div className={cn('w-2 h-2 rounded-full', busy ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400')} />
-          <span className="text-xs text-slate-400">{busy ? 'Pensando…' : 'Online'}</span>
+        <div className="ml-auto flex items-center gap-3">
+          {/* Model selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowModels(v => !v)}
+              className={cn(
+                'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors',
+                activeModel.color
+              )}
+            >
+              <span>{activeModel.label}</span>
+              <span className="text-[9px] opacity-60">▾</span>
+            </button>
+            {showModels && (
+              <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-100 rounded-xl shadow-lg z-20 overflow-hidden">
+                {MODELS.map(m => (
+                  <button key={m.id} onClick={() => { setModel(m.id); setShowModels(false) }}
+                    className={cn(
+                      'w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-50 transition-colors',
+                      m.id === model && 'bg-slate-50'
+                    )}>
+                    <span className="text-xs font-medium text-slate-700">{m.label}</span>
+                    <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border', m.color)}>{m.tag}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className={cn('w-2 h-2 rounded-full', busy ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400')} />
+            <span className="text-xs text-slate-400">{busy ? 'Pensando…' : 'Online'}</span>
+          </div>
         </div>
       </header>
 

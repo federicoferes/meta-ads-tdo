@@ -1,13 +1,25 @@
 import { createOpenAI } from '@ai-sdk/openai'
 import { streamText, tool, stepCountIs } from 'ai'
+import { z } from 'zod'
+import { TDO_SYSTEM_PROMPT } from '@/lib/tdo-context'
+import { META_BASE, MetaAction, MetaCPR, deriveResult, sumActions, MSGS_STARTED, MSGS_CONNECTED, LEADS_FORM, qs } from '@/lib/meta'
 
 const openrouter = createOpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
   apiKey: process.env.OPENROUTER_API_KEY!,
 })
-import { z } from 'zod'
-import { TDO_SYSTEM_PROMPT } from '@/lib/tdo-context'
-import { META_BASE, MetaAction, MetaCPR, deriveResult, sumActions, MSGS_STARTED, MSGS_CONNECTED, LEADS_FORM, qs } from '@/lib/meta'
+
+const ALLOWED_MODELS = new Set([
+  'anthropic/claude-sonnet-4.6',
+  'anthropic/claude-opus-4.8',
+  'openai/gpt-4.1',
+  'openai/gpt-4.1-mini',
+  'google/gemini-2.5-pro',
+  'google/gemini-2.5-flash',
+  'deepseek/deepseek-v4-pro',
+  'x-ai/grok-4.3',
+])
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6'
 
 const TOKEN   = process.env.META_ACCESS_TOKEN!
 const ACCOUNT = process.env.META_AD_ACCOUNT_ID!
@@ -15,10 +27,11 @@ const ACCOUNT = process.env.META_AD_ACCOUNT_ID!
 export const maxDuration = 60
 
 export async function POST(req: Request) {
-  const { messages } = await req.json()
+  const { messages, model: requestedModel } = await req.json()
+  const modelId = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL
 
   const result = streamText({
-    model: openrouter('anthropic/claude-sonnet-4-5'),
+    model: openrouter(modelId),
     system: TDO_SYSTEM_PROMPT,
     messages,
     stopWhen: stepCountIs(5),
