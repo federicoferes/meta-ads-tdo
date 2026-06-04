@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai'
-import { streamText, tool, stepCountIs } from 'ai'
+import { streamText, tool, stepCountIs, convertToModelMessages } from 'ai'
 import { z } from 'zod'
 import { TDO_SYSTEM_PROMPT } from '@/lib/tdo-context'
 import { META_BASE, MetaAction, MetaCPR, deriveResult, sumActions, MSGS_STARTED, MSGS_CONNECTED, LEADS_FORM, qs } from '@/lib/meta'
@@ -27,8 +27,9 @@ const ACCOUNT = process.env.META_AD_ACCOUNT_ID!
 export const maxDuration = 60
 
 export async function POST(req: Request) {
-  const { messages, model: requestedModel } = await req.json()
+  const { messages: uiMessages, model: requestedModel } = await req.json()
   const modelId = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL
+  const messages = await convertToModelMessages(uiMessages)
 
   const result = streamText({
     model: openrouter(modelId),
