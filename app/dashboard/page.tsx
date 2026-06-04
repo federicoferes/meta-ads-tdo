@@ -39,6 +39,7 @@ interface MetaData {
   overview: Overview; prev: Prev
   byObjective: Record<string, number>; campaigns: Campaign[]
   trend: TrendPoint[]; platforms: Platform[]
+  cached?: boolean; syncedAt?: string
 }
 
 const PRESETS = [
@@ -56,6 +57,16 @@ const OBJ_COLORS: Record<string, string> = {
 }
 
 function cn(...c: (string | false | undefined)[]) { return c.filter(Boolean).join(' ') }
+
+function formatSyncTime(iso?: string) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const mins = Math.round((Date.now() - d.getTime()) / 60_000)
+  if (mins < 1)   return 'ahora'
+  if (mins < 60)  return `hace ${mins}m`
+  const hrs = Math.floor(mins / 60)
+  return `hace ${hrs}h`
+}
 
 // Returns % change. lowerIsBetter = true for cost metrics (lower = green)
 function delta(current: number, prev: number, lowerIsBetter = false): { pct: number; up: boolean; color: string } | null {
@@ -113,9 +124,12 @@ export default function DashboardPage() {
   const [customUntil, setCustomUntil] = useState('')
   const [showCustom, setShowCustom]   = useState(false)
 
-  const load = useCallback(async (s: string, u: string) => {
+  const load = useCallback(async (s: string, u: string, force = false) => {
     setLoading(true)
-    try { setData(await (await fetch(`/api/meta-ads?since=${s}&until=${u}`)).json()) }
+    try {
+      const url = `/api/meta-ads?since=${s}&until=${u}${force ? '&force=1' : ''}`
+      setData(await (await fetch(url)).json())
+    }
     finally { setLoading(false) }
   }, [])
 
@@ -155,15 +169,36 @@ export default function DashboardPage() {
           <h1 className="text-base font-bold text-slate-800">Tierra de Oportunidades — Meta Ads</h1>
           <p className="text-xs text-slate-400 mt-0.5">{since} → {until}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Cache indicator */}
+          {data && (
+            <div className={cn(
+              'flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full',
+              data.cached
+                ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                : 'bg-slate-50 text-slate-400 border border-slate-100'
+            )}>
+              <div className={cn('w-1.5 h-1.5 rounded-full', data.cached ? 'bg-emerald-400' : 'bg-blue-400')} />
+              {data.cached ? (
+                <>Desde DB · <span className="font-medium">{formatSyncTime(data.syncedAt)}</span></>
+              ) : 'Live · Meta API'}
+            </div>
+          )}
           <Link href="/agent"
             className="text-xs px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors">
             Estratega IA
           </Link>
+          {/* Actualizar = use cache; Force = skip cache */}
           <button onClick={() => load(since, until)}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors">
             <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
             Actualizar
+          </button>
+          <button onClick={() => load(since, until, true)}
+            title="Ignorar caché y consultar Meta API"
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-500 border border-slate-200 rounded-lg transition-colors">
+            <RefreshCw className="w-3 h-3" />
+            Forzar
           </button>
         </div>
       </header>
