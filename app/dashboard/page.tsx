@@ -28,8 +28,15 @@ interface Campaign {
 }
 interface TrendPoint { date: string; spend: number; impressions: number; msgsStarted: number; leadsForm: number }
 interface Platform   { platform: string; spend: number; impressions: number; clicks: number }
+interface Prev {
+  spend: number; impressions: number; reach: number
+  msgsStarted: number; leadsForm: number
+  cpm: number; ctr: number; frequency: number
+  cpmMsg: number | null; cpmLead: number | null
+}
 interface MetaData {
-  since: string; until: string; overview: Overview
+  since: string; until: string; prevSince: string; prevUntil: string
+  overview: Overview; prev: Prev
   byObjective: Record<string, number>; campaigns: Campaign[]
   trend: TrendPoint[]; platforms: Platform[]
 }
@@ -50,8 +57,28 @@ const OBJ_COLORS: Record<string, string> = {
 
 function cn(...c: (string | false | undefined)[]) { return c.filter(Boolean).join(' ') }
 
-function KPI({ label, value, sub, accent = 'blue', icon }: {
+// Returns % change. lowerIsBetter = true for cost metrics (lower = green)
+function delta(current: number, prev: number, lowerIsBetter = false): { pct: number; up: boolean; color: string } | null {
+  if (!prev || prev === 0) return null
+  const pct = ((current - prev) / prev) * 100
+  const up  = pct > 0
+  const good = lowerIsBetter ? !up : up
+  return { pct, up, color: good ? 'text-emerald-600' : 'text-rose-500' }
+}
+
+function Delta({ current, prev, lowerIsBetter = false }: { current: number; prev: number; lowerIsBetter?: boolean }) {
+  const d = delta(current, prev, lowerIsBetter)
+  if (!d) return null
+  return (
+    <span className={cn('text-[10px] font-semibold ml-1.5', d.color)}>
+      {d.up ? '▲' : '▼'} {Math.abs(d.pct).toFixed(1)}%
+    </span>
+  )
+}
+
+function KPI({ label, value, sub, accent = 'blue', icon, current, prev, lowerIsBetter }: {
   label: string; value: string; sub?: string; accent?: string; icon?: React.ReactNode
+  current?: number; prev?: number; lowerIsBetter?: boolean
 }) {
   const border: Record<string, string> = {
     blue: 'border-l-blue-500', emerald: 'border-l-emerald-500',
@@ -65,7 +92,12 @@ function KPI({ label, value, sub, accent = 'blue', icon }: {
         {icon && <span className="text-slate-400">{icon}</span>}
         <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</p>
       </div>
-      <p className="text-xl font-bold text-slate-800 leading-none">{value}</p>
+      <div className="flex items-baseline gap-0">
+        <p className="text-xl font-bold text-slate-800 leading-none">{value}</p>
+        {current !== undefined && prev !== undefined && prev > 0 && (
+          <Delta current={current} prev={prev} lowerIsBetter={lowerIsBetter} />
+        )}
+      </div>
       {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
     </div>
   )
@@ -217,21 +249,33 @@ export default function DashboardPage() {
 
         {o && (
           <>
-            {/* ── KPIs: Gasto + Resultados clave ── */}
+            {/* Período de comparación */}
+            {data.prev && (
+              <p className="text-[11px] text-slate-400 mb-4 -mt-4">
+                vs. período anterior: {data.prevSince} → {data.prevUntil}
+              </p>
+            )}
+
+            {/* ── KPIs: Inversión ── */}
             <div className="mb-2">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Inversión</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 <KPI label="Gasto total" value={fmtARS(o.spend)} sub="todas las campañas" accent="rose"
-                  icon={<DollarSign className="w-3 h-3" />} />
+                  icon={<DollarSign className="w-3 h-3" />}
+                  current={o.spend} prev={data.prev?.spend} lowerIsBetter />
                 <KPI label="CPM" value={fmtARS(o.cpm)} sub="por mil impresiones" accent="amber"
-                  icon={<Activity className="w-3 h-3" />} />
+                  icon={<Activity className="w-3 h-3" />}
+                  current={o.cpm} prev={data.prev?.cpm} lowerIsBetter />
                 <KPI label="Impresiones" value={fmtNum(o.impressions)} sub={`Alcance ${fmtNum(o.reach)}`} accent="sky"
-                  icon={<Eye className="w-3 h-3" />} />
+                  icon={<Eye className="w-3 h-3" />}
+                  current={o.impressions} prev={data.prev?.impressions} />
                 <KPI label="Frecuencia" value={o.frequency.toFixed(2)} sub={`CTR ${o.ctr.toFixed(2)}%`} accent="slate"
-                  icon={<Activity className="w-3 h-3" />} />
+                  icon={<Activity className="w-3 h-3" />}
+                  current={o.frequency} prev={data.prev?.frequency} lowerIsBetter />
               </div>
             </div>
 
+            {/* ── KPIs: Resultados ── */}
             <div className="mb-8">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Resultados por tipo</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -239,29 +283,29 @@ export default function DashboardPage() {
                   label="Mensajes iniciados"
                   value={fmtNum(o.msgsStarted)}
                   sub={o.cpmMsg ? `Costo: ${fmtARS(o.cpmMsg)}` : 'resultado principal de messaging'}
-                  accent="violet"
-                  icon={<MessageCircle className="w-3 h-3" />}
+                  accent="violet" icon={<MessageCircle className="w-3 h-3" />}
+                  current={o.msgsStarted} prev={data.prev?.msgsStarted}
                 />
                 <KPI
                   label="Clientes potenciales"
                   value={fmtNum(o.leadsForm)}
                   sub={o.cpmLead ? `Costo: ${fmtARS(o.cpmLead)}` : 'leads por formulario'}
-                  accent="emerald"
-                  icon={<FileText className="w-3 h-3" />}
+                  accent="emerald" icon={<FileText className="w-3 h-3" />}
+                  current={o.leadsForm} prev={data.prev?.leadsForm}
                 />
                 <KPI
-                  label="Mensajes conectados"
-                  value={fmtNum(o.msgsConnected)}
-                  sub="total_messaging_connection"
-                  accent="blue"
-                  icon={<MessageCircle className="w-3 h-3" />}
+                  label="Costo x mensaje"
+                  value={o.cpmMsg ? fmtARS(o.cpmMsg) : '—'}
+                  sub="vs período anterior"
+                  accent="blue" icon={<MessageCircle className="w-3 h-3" />}
+                  current={o.cpmMsg ?? undefined} prev={data.prev?.cpmMsg ?? undefined} lowerIsBetter
                 />
                 <KPI
-                  label="Clics al destino"
-                  value={fmtNum(o.clicks)}
-                  sub={`+ ${fmtNum(o.pageViews)} vistas de página`}
-                  accent="sky"
-                  icon={<MousePointerClick className="w-3 h-3" />}
+                  label="Costo x lead"
+                  value={o.cpmLead ? fmtARS(o.cpmLead) : '—'}
+                  sub="vs período anterior"
+                  accent="sky" icon={<MousePointerClick className="w-3 h-3" />}
+                  current={o.cpmLead ?? undefined} prev={data.prev?.cpmLead ?? undefined} lowerIsBetter
                 />
               </div>
             </div>

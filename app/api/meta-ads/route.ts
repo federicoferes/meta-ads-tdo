@@ -18,19 +18,26 @@ export async function GET(req: NextRequest) {
   const until = sp.get('until') ?? today()
   const tr    = JSON.stringify({ since, until })
 
-  const [overviewRes, campaignsRes, trendRes, platformRes] = await Promise.all([
-    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: OVERVIEW_FIELDS, time_range: tr, level: 'account' })}`),
-    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: CAMPAIGN_FIELDS,  time_range: tr, level: 'campaign', limit: '50', sort: 'spend_descending' })}`),
-    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: 'spend,impressions,actions', time_range: tr, level: 'account', time_increment: '1' })}`),
-    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: 'spend,impressions,clicks', time_range: tr, level: 'account', breakdowns: 'publisher_platform' })}`),
+  // Período de comparación: misma cantidad de días, inmediatamente anterior
+  const days     = daysBetween(since, until)
+  const prevUntil = shiftDate(since, -1)           // día antes del inicio actual
+  const prevSince = shiftDate(prevUntil, -(days - 1))
+  const trPrev   = JSON.stringify({ since: prevSince, until: prevUntil })
+
+  const [overviewRes, campaignsRes, trendRes, platformRes, prevRes] = await Promise.all([
+    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: OVERVIEW_FIELDS, time_range: tr,     level: 'account' })}`),
+    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: CAMPAIGN_FIELDS, time_range: tr,     level: 'campaign', limit: '50', sort: 'spend_descending' })}`),
+    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: 'spend,impressions,actions',         time_range: tr,     level: 'account', time_increment: '1' })}`),
+    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: 'spend,impressions,clicks',          time_range: tr,     level: 'account', breakdowns: 'publisher_platform' })}`),
+    fetch(`${META_BASE}/${ACCOUNT}/insights?${qs(TOKEN, { fields: OVERVIEW_FIELDS,                     time_range: trPrev, level: 'account' })}`),
   ])
 
   if (!overviewRes.ok) {
     return NextResponse.json({ error: await overviewRes.text() }, { status: 502 })
   }
 
-  const [ovJson, cvJson, tvJson, pvJson] = await Promise.all([
-    overviewRes.json(), campaignsRes.json(), trendRes.json(), platformRes.json(),
+  const [ovJson, cvJson, tvJson, pvJson, prevJson] = await Promise.all([
+    overviewRes.json(), campaignsRes.json(), trendRes.json(), platformRes.json(), prevRes.json(),
   ])
 
   const o       = ovJson.data?.[0] ?? {}
@@ -95,11 +102,19 @@ export async function GET(req: NextRequest) {
       clicks:      Number(p.clicks ?? 0),
     }))
 
+  // Previous period
+  const pv       = prevJson.data?.[0] ?? {}
+  const pvActs   = pv.actions as MetaAction[] | undefined
+  const prevSpend = Number(pv.spend ?? 0)
+  const prevMsgs  = sumActions(pvActs, MSGS_STARTED)
+  const prevLeads = sumActions(pvActs, LEADS_FORM)
+
   const byObjective: Record<string, number> = {}
   for (const c of campaigns) byObjective[c.objective] = (byObjective[c.objective] ?? 0) + c.spend
 
   return NextResponse.json({
     since, until,
+    prevSince, prevUntil,
     overview: {
       spend:        totalSpend,
       impressions:  Number(o.impressions ?? 0),
@@ -113,9 +128,20 @@ export async function GET(req: NextRequest) {
       cpm:          Number(o.cpm ?? 0),
       ctr:          Number(o.ctr ?? 0),
       frequency:    Number(o.frequency ?? 0),
-      // Cost metrics
-      cpmMsg:   msgsStarted > 0   ? totalSpend / msgsStarted   : null,
-      cpmLead:  leadsForm > 0     ? totalSpend / leadsForm     : null,
+      cpmMsg:   msgsStarted > 0 ? totalSpend / msgsStarted : null,
+      cpmLead:  leadsForm   > 0 ? totalSpend / leadsForm   : null,
+    },
+    prev: {
+      spend:       prevSpend,
+      impressions: Number(pv.impressions ?? 0),
+      reach:       Number(pv.reach ?? 0),
+      msgsStarted: prevMsgs,
+      leadsForm:   prevLeads,
+      cpm:         Number(pv.cpm ?? 0),
+      ctr:         Number(pv.ctr ?? 0),
+      frequency:   Number(pv.frequency ?? 0),
+      cpmMsg:  prevMsgs  > 0 ? prevSpend / prevMsgs  : null,
+      cpmLead: prevLeads > 0 ? prevSpend / prevLeads : null,
     },
     byObjective,
     campaigns,
@@ -126,3 +152,13 @@ export async function GET(req: NextRequest) {
 
 function today()         { return new Date().toISOString().slice(0, 10) }
 function thirtyDaysAgo() { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10) }
+
+function daysBetween(a: string, b: string): number {
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86_400_000) + 1
+}
+
+function shiftDate(date: string, days: number): string {
+  const d = new Date(date)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
